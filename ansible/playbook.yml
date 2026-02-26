@@ -6,7 +6,7 @@
   vars:
     cluster_name: pra
     namespace: pra
-    image: "pra/flask-sqlite:1.0"
+    image: "pra/flask-sqlite:1.2"
     do_restore: false   # mets true pour faire un restore automatiquement
 
   tasks:

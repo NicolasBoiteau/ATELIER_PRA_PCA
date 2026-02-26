@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import time
 from datetime import datetime
 from flask import Flask, jsonify, request
 
@@ -32,7 +33,6 @@ def hello():
     init_db()
     return jsonify(status="Bonjour tout le monde !")
 
-
 @app.get("/health")
 def health():
     init_db()
@@ -41,10 +41,8 @@ def health():
 @app.get("/add")
 def add():
     init_db()
-
     msg = request.args.get("message", "hello")
     ts = datetime.utcnow().isoformat() + "Z"
-
     conn = get_conn()
     conn.execute(
         "INSERT INTO events (ts, message) VALUES (?, ?)",
@@ -52,7 +50,6 @@ def add():
     )
     conn.commit()
     conn.close()
-
     return jsonify(
         status="added",
         timestamp=ts,
@@ -62,33 +59,61 @@ def add():
 @app.get("/consultation")
 def consultation():
     init_db()
-
     conn = get_conn()
     cur = conn.execute(
         "SELECT id, ts, message FROM events ORDER BY id DESC LIMIT 50"
     )
-
     rows = [
         {"id": r[0], "timestamp": r[1], "message": r[2]}
         for r in cur.fetchall()
     ]
-
     conn.close()
-
     return jsonify(rows)
 
 @app.get("/count")
 def count():
     init_db()
+    conn = get_conn()
+    cur = conn.execute("SELECT COUNT(*) FROM events")
+    n = cur.fetchone()[0]
+    conn.close()
+    return jsonify(count=n)
 
+# --- Nouvelle route Status (Placée AVANT le bloc Main) ---
+@app.get("/status")
+def status():
+    init_db()
+    
+    # 1. Nombre d'événements en base
     conn = get_conn()
     cur = conn.execute("SELECT COUNT(*) FROM events")
     n = cur.fetchone()[0]
     conn.close()
 
-    return jsonify(count=n)
+    # 2. Informations sur le dernier backup
+    backup_dir = "/backup"
+    last_backup = "none"
+    age = 0
 
-# ---------- Main ----------
+    if os.path.exists(backup_dir):
+        # On liste les fichiers .db dans le dossier de backup
+        files = [f for f in os.listdir(backup_dir) if f.endswith(".db")]
+        if files:
+            # On récupère le fichier le plus récent basé sur sa date de modification
+            full_paths = [os.path.join(backup_dir, f) for f in files]
+            latest_file_path = max(full_paths, key=os.path.getmtime)
+            
+            last_backup = os.path.basename(latest_file_path)
+            age = int(time.time() - os.path.getmtime(latest_file_path))
+
+    return jsonify(
+        count=n,
+        last_backup_file=last_backup,
+        backup_age_seconds=age
+    )
+
+# ---------- Main (Démarrage du serveur) ----------
 if __name__ == "__main__":
     init_db()
+    # app.run est bloquant : aucune route définie après cette ligne ne sera lue
     app.run(host="0.0.0.0", port=8080)
